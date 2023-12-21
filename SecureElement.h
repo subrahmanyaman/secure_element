@@ -1,34 +1,16 @@
-#ifndef ANDROID_HARDWARE_SECURE_ELEMENT_V1_2_SECUREELEMENT_H
-#define ANDROID_HARDWARE_SECURE_ELEMENT_V1_2_SECUREELEMENT_H
-
-//#include <SyncEvent.h>
-#include <android-base/stringprintf.h>
-#include <android/hardware/secure_element/1.0/types.h>
-#include <android/hardware/secure_element/1.2/ISecureElement.h>
-#include <hardware/hardware.h>
-#include <hidl/MQDescriptor.h>
-#include <hidl/Status.h>
-#include <pthread.h>
+#pragma once
+#include <aidl/android/hardware/secure_element/BnSecureElement.h>
+// #include <android-base/logging.h>
 #include "Transport.h"
+#include <android/binder_manager.h>
+#include <android/binder_process.h>
 
-namespace android {
-namespace hardware {
-namespace secure_element {
-namespace V1_2 {
-namespace implementation {
+namespace aidl::android::hardware::secure_element {
 
-using ::android::sp;
-using android::base::StringPrintf;
-using ::android::hardware::hidl_array;
-using ::android::hardware::hidl_memory;
-using ::android::hardware::hidl_string;
-using ::android::hardware::hidl_vec;
-using ::android::hardware::Return;
-using ::android::hardware::Void;
-using ::android::hardware::secure_element::V1_0::LogicalChannelResponse;
-using ::android::hardware::secure_element::V1_0::SecureElementStatus;
-using ::android::hardware::secure_element::V1_2::ISecureElement;
-using ::android::hidl::base::V1_0::IBase;
+using aidl::android::hardware::secure_element::BnSecureElement;
+using aidl::android::hardware::secure_element::ISecureElementCallback;
+using aidl::android::hardware::secure_element::LogicalChannelResponse;
+using ndk::ScopedAStatus;
 
 #ifndef MIN_APDU_LENGTH
 #define MIN_APDU_LENGTH 0x04
@@ -37,45 +19,26 @@ using ::android::hidl::base::V1_0::IBase;
 #define DEFAULT_BASIC_CHANNEL 0x00
 #endif
 
-struct SecureElement : public V1_2::ISecureElement,
-                       public hidl_death_recipient {
-  SecureElement();
-  Return<void> init(
-      const sp<
-          ::android::hardware::secure_element::V1_0::ISecureElementHalCallback>&
-          clientCallback) override;
-  Return<void> init_1_1(
-      const sp<
-          ::android::hardware::secure_element::V1_1::ISecureElementHalCallback>&
-          clientCallback) override;
-  Return<void> getAtr(getAtr_cb _hidl_cb) override;
-  Return<bool> isCardPresent() override;
-  Return<void> transmit(const hidl_vec<uint8_t>& data,
-                        transmit_cb _hidl_cb) override;
-  Return<void> openLogicalChannel(const hidl_vec<uint8_t>& aid, uint8_t p2,
-                                  openLogicalChannel_cb _hidl_cb) override;
-  Return<void> openBasicChannel(const hidl_vec<uint8_t>& aid, uint8_t p2,
-                                openBasicChannel_cb _hidl_cb) override;
-  Return<SecureElementStatus> closeChannel(uint8_t channelNumber) override;
+class SecureElement : public BnSecureElement {
+  public:
+    SecureElement();
+    ScopedAStatus init(const std::shared_ptr<ISecureElementCallback>& client_callback) override;
+    ScopedAStatus getAtr(std::vector<uint8_t>* aidl_return) override;
+    ScopedAStatus reset() override;
+    ScopedAStatus isCardPresent(bool* aidl_return) override;
+    ScopedAStatus openBasicChannel(const std::vector<uint8_t>& aid, int8_t p2,
+                                   std::vector<uint8_t>* aidl_return) override;
+    ScopedAStatus openLogicalChannel(
+        const std::vector<uint8_t>& aid, int8_t p2,
+        ::aidl::android::hardware::secure_element::LogicalChannelResponse* aidl_return) override;
+    ScopedAStatus closeChannel(int8_t channel_number) override;
+    ScopedAStatus transmit(const std::vector<uint8_t>& data,
+                           std::vector<uint8_t>* aidl_return) override;
 
-  void serviceDied(uint64_t /*cookie*/, const wp<IBase>& /*who*/);
-
-  Return<::android::hardware::secure_element::V1_0::SecureElementStatus>
-  reset();
-  void seHalInit();
-
- private:
-  static std::vector<bool> mOpenedChannels;
-  static sp<V1_0::ISecureElementHalCallback> mCallbackV1_0;
-  static sp<V1_1::ISecureElementHalCallback> mCallbackV1_1;
-  SocketTransport *mSocketTransport;
-  Return<SecureElementStatus> internalCloseChannel(uint8_t channelNumber);
+  private:
+    static std::vector<bool> mOpenedChannels;
+    std::shared_ptr<ISecureElementCallback> mCallback;
+    std::shared_ptr<SocketTransport> mSocketTransport;
 };
 
-}  // namespace implementation
-}  // namespace V1_2
-}  // namespace secure_element
-}  // namespace hardware
-}  // namespace android
-
-#endif  // ANDROID_HARDWARE_SECURE_ELEMENT_V1_1_SECUREELEMENT_H
+}  // namespace aidl::android::hardware::secure_element

@@ -1,7 +1,24 @@
-#define LOG_TAG "Google_SE-service:SocketTransport"
+/*
+ **
+ ** Copyright 2020, The Android Open Source Project
+ **
+ ** Licensed under the Apache License, Version 2.0 (the "License");
+ ** you may not use this file except in compliance with the License.
+ ** You may obtain a copy of the License at
+ **
+ **     http://www.apache.org/licenses/LICENSE-2.0
+ **
+ ** Unless required by applicable law or agreed to in writing, software
+ ** distributed under the License is distributed on an "AS IS" BASIS,
+ ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ ** See the License for the specific language governing permissions and
+ ** limitations under the License.
+ */
+#include "Transport.h"
+
 #include <arpa/inet.h>
 #include <errno.h>
-#include <log/log.h>
+
 #include <memory>
 #include <vector>
 
@@ -11,22 +28,18 @@
 #include "Transport.h"
 
 #define PORT 8080
-#define IPADDR  "192.168.1.195"
+#define IPADDR "192.168.9.112"
 #define MAX_RECV_BUFFER_SIZE 2500
 
-namespace android {
-namespace hardware {
-namespace secure_element {
-namespace V1_2 {
-namespace implementation {
-
+namespace aidl::android::hardware::secure_element {
 using std::shared_ptr;
 using std::vector;
 
 bool SocketTransport::openConnection() {
     struct sockaddr_in serv_addr;
     if ((mSocket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        LOG(ERROR) << "Socket creation failed" << " Error: " << strerror(errno);
+        LOG(ERROR) << "Socket creation failed"
+                   << " Error: " << strerror(errno);
         return false;
     }
 
@@ -44,13 +57,11 @@ bool SocketTransport::openConnection() {
         LOG(ERROR) << "Connection failed. Error: " << strerror(errno);
         return false;
     }
-
-    LOG(INFO) << "openConnection done";
     socketStatus = true;
     return true;
 }
 
-bool SocketTransport::sendData(const uint8_t* inData, const size_t inLen, std::vector<uint8_t>& output) {
+bool SocketTransport::sendData(const vector<uint8_t>& inData, vector<uint8_t>& output) {
     int count = 1;
     while (!socketStatus && count++ < 5) {
         sleep(1);
@@ -64,18 +75,18 @@ bool SocketTransport::sendData(const uint8_t* inData, const size_t inLen, std::v
     }
     // Prepend the input length to the inputData before sending.
     vector<uint8_t> inDataPrependedLength;
-    inDataPrependedLength.push_back(inLen >> 8);
-    inDataPrependedLength.push_back(inLen & 0xFF);
-    inDataPrependedLength.insert(inDataPrependedLength.end(), inData, inData + inLen);
+    inDataPrependedLength.push_back(static_cast<uint8_t>(inData.size() >> 8));
+    inDataPrependedLength.push_back(static_cast<uint8_t>(inData.size() & 0xFF));
+    inDataPrependedLength.insert(inDataPrependedLength.end(), inData.begin(), inData.end());
 
-    LOG(INFO) << "Send Data size = " << inDataPrependedLength.size();
-    if (0 > send(mSocket, inDataPrependedLength.data(), inDataPrependedLength.size(), 0)) {
+    if (0 >
+        send(mSocket, inDataPrependedLength.data(), inDataPrependedLength.size(), MSG_NOSIGNAL)) {
         static int connectionResetCnt = 0; /* To avoid loop */
-        if (ECONNRESET == errno && connectionResetCnt == 0) {
+        if ((ECONNRESET == errno || EPIPE == errno) && connectionResetCnt == 0) {
             // Connection reset. Try open socket and then sendData.
             socketStatus = false;
             connectionResetCnt++;
-            return sendData(inData, inLen, output);
+            return sendData(inData, output);
         }
         LOG(ERROR) << "Failed to send data over socket err: " << errno;
         connectionResetCnt = 0;
@@ -83,10 +94,8 @@ bool SocketTransport::sendData(const uint8_t* inData, const size_t inLen, std::v
     }
 
     if (!readData(output)) {
-        LOG(ERROR) << "Read Data error";
         return false;
     }
-    LOG(INFO) << "Read Data size = " << output.size();
     return true;
 }
 
@@ -100,16 +109,14 @@ bool SocketTransport::isConnected() {
     return socketStatus;
 }
 
-bool SocketTransport::readData(std::vector<uint8_t>& output) {
+bool SocketTransport::readData(vector<uint8_t>& output) {
     uint8_t buffer[MAX_RECV_BUFFER_SIZE];
     ssize_t expectedResponseLen = 0;
     ssize_t totalBytesRead = 0;
-
     // The first 2 bytes in the response contains the expected response length.
     do {
-        size_t i = 0;
+        ssize_t i = 0;
         ssize_t numBytes = read(mSocket, buffer, MAX_RECV_BUFFER_SIZE);
-
         if (0 > numBytes) {
             LOG(ERROR) << "Failed to read data from socket.";
             return false;
@@ -117,23 +124,18 @@ bool SocketTransport::readData(std::vector<uint8_t>& output) {
         totalBytesRead += numBytes;
         if (expectedResponseLen == 0) {
             // First two bytes in the response contains the expected response length.
-            expectedResponseLen |=  static_cast<ssize_t>(buffer[1] & 0xFF);
-            expectedResponseLen |=  static_cast<ssize_t>((buffer[0] << 8) & 0xFF00);
+            expectedResponseLen |= static_cast<ssize_t>(buffer[1] & 0xFF);
+            expectedResponseLen |= static_cast<ssize_t>((buffer[0] << 8) & 0xFF00);
             // 2 bytes for storing the length.
             expectedResponseLen += 2;
             i = 2;
         }
-
         for (; i < numBytes; i++) {
             output.push_back(buffer[i]);
         }
-    } while(totalBytesRead < expectedResponseLen);
+    } while (totalBytesRead < expectedResponseLen);
 
     return true;
 }
 
-}  // namespace implementation
-}  // namespace V1_2
-}  // namespace secure_element
-}  // namespace hardware
-}  // namespace android
+}  // namespace aidl::android::hardware::secure_element

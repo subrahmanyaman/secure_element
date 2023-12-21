@@ -2,6 +2,7 @@
 on property:ro.build.type=userdebug
     setprop service.seek fullaccess
 
-service vendor.secure_element_hal_service /vendor/bin/hw/android.hardware.secure_element@1.2-service.google
+service vendor.secure_element vendor/bin/hw/android.hardware.secure_element-service.google
     class hal
-    user jc_strongbox
+    user nobody
+    group nobody
